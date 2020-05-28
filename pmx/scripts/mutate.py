@@ -224,7 +224,8 @@ def check_OPLS_LYS( res ):
 #    else: return 'PEPTIDE'
 
 def read_script(fn):
-    return read_and_format(fn,"is")
+    #AJA: changed "is" to "sis"
+    return read_and_format(fn,"sis")
 
 def int_input():
     inp = raw_input()
@@ -443,7 +444,6 @@ def apply_nuc_mutation(m, residue, new_nuc_name, mtp_file, bRNA=False):
 
 
 def apply_aa_mutation(m, residue, new_aa_name, mtp_file, bStrB, infileB):
-
     if residue.resname == 'ILE': rename_ile( residue )
     olkey = convert_aa_name( residue.resname )
 
@@ -471,7 +471,8 @@ def apply_aa_mutation(m, residue, new_aa_name, mtp_file, bStrB, infileB):
     set_conformation(residue, hybrid_res, rotdic)
     if bStrB:
 	print "log_> Set Bstate geometry according to the provided structure"
-   	mB = Model(infileB,bPDBTER=True)
+	#AJA: this was causing issues with reading in files
+   	mB = Model(infileB,bPDBTER=True, renumber_residues=False)
    	rename_atoms_to_gromacs( mB )
 	mB.nm2a()
 	residueB = mB.residues[residue.id-1]
@@ -484,19 +485,27 @@ def apply_aa_mutation(m, residue, new_aa_name, mtp_file, bStrB, infileB):
     rename_back(residue,hash1)
     rename_back(hybrid_res,hash2)
     ## VG rename residue atoms back
-
-    m.replace_residue( residue, hybrid_res)
+    #AJA added bKeepResNum=False
+    m.replace_residue( residue, hybrid_res, bKeepResNum=True)
     print 'log_> Inserted hybrid residue %s at position %d (chain %s)' %\
           (hybrid_res.resname, hybrid_res.id, hybrid_res.chain_id)
 
 
 def apply_mutation(m, mut, mtp_file, bStrB, infileB, bRNA):
-    residue_id = mut[0]
+    residue_chain = mut[0]
+    residue_id = mut[1]
     if not check_residue_range(m, residue_id):
         raise RangeCheckError(residue_id)
-    residue = m.residues[residue_id - 1]
+    #need to add in chain selector here
+    for chain in m.chains:
+        if chain.id == residue_chain:
+            #issue is that it is renumbering chains...
+            for res in chain.residues:
+                if res.id == residue_id:
+                    print(res)
+                    residue = res
     if get_restype(residue) == 'PEPTIDE':
-        new_aa_name = convert_aa_name( mut[1] )
+        new_aa_name = convert_aa_name( mut[2] )
         apply_aa_mutation(m, residue, new_aa_name, mtp_file, bStrB, infileB)
     elif get_restype(residue) in ['DNA','RNA']:
         new_nuc_name = mut[1].upper()
@@ -641,9 +650,9 @@ def main(argv):
    else:
        mtp_file = os.path.join( ffpath,'mutres.mtp')
    infile = cmdl['-f']
-
-   m = Model(infile,bPDBTER=True)
-
+   #AJA: this was causing issues with reading in files
+   #it is still renumbering!
+   m = Model(infile,bPDBTER=True, renumber_residues = False)
    rename_atoms_to_gromacs( m )
 #   m.write('ll.pdb')
    m.nm2a()
@@ -652,7 +661,8 @@ def main(argv):
    if cmdl.opt['-script'].is_set:
        mutations_to_make = read_script( cmdl['-script'] )
        for mut in mutations_to_make:
-	   check_residue_name( m.residues[ mut[0]-1 ] )
+           #AJA changed mut[0] to mut[1]
+           check_residue_name( m.residues[ mut[1]-1 ] )
            apply_mutation( m, mut, mtp_file, bStrB, infileB, bRNA )
    else:
        do_more = True
@@ -661,8 +671,8 @@ def main(argv):
            apply_mutation( m, mutation, mtp_file, bStrB, infileB, bRNA )
            if not ask_next(): do_more = False
 
-
-   m.write(cmdl['-o'],bPDBTER=True)
+   #AJA: added bAssignChainIDs = True
+   m.write(cmdl['-o'],bPDBTER=True, bAssignChainIDs=True)
    print
    print 'mutations done...........'
    print
